@@ -161,3 +161,101 @@ fit_convrt_realtime <- function(
   list(rt_df = rt, lam = lam, gamma = gamma, fit = fit, fit_main = fit_main,
        design = d, X_hat = X_hat, g = g, pi_EY = pi_EY, sel_lam = sel, phi_hat = phi)
 }
+
+# ------------------------------------------------------------------------------
+# Real-time fit with split-conformal edge CIs (convenience wrapper)
+# ------------------------------------------------------------------------------
+# Produces a single nowcast at the latest available day (the last element of
+# obs_inc) whose trailing-edge CI is calibrated by split conformal: the model is
+# refit at the previous `n_calib` daily vintages, and each past vintage's
+# real-time edge error against the later (settled) estimate is used to widen the
+# edge band.  This automates the vintage loop shown in
+# examples/demo_realtime_ci.R.
+#
+# NOTE: this refits the real-time model `n_calib` times, so it is much slower
+# than a single fit_convrt_realtime() call.  Set progress = TRUE to watch it.
+#
+# Returns a list:
+#   rt_df          : the target (latest-vintage) rt_df with conformal columns
+#                    (Rt_lo/Rt_hi overwritten near the edge; Rt_lo_wald/Rt_hi_wald
+#                    keep the pointwise band; ci_source marks each row).
+#   daily_vintages : the calibration tibble (all refit vintages, stacked).
+#   target_W       : the target vintage Date (latest day).
+#   fit            : the full fit_convrt_realtime() result at the target vintage.
+#   n_vintages     : how many vintage fits succeeded.
+fit_convrt_realtime_conformal <- function(
+    obs_inc, dates, g,
+    mean_EY, sd_EY,
+    severity        = 1,
+    first_rt_date   = NULL,
+    likelihood_start_date = NULL,
+    knot_step       = 5L,
+    n_calib         = 45L,      # number of prior daily vintages to calibrate on
+    ci_level        = 0.90,
+    buffer_days     = 14L,
+    max_lag         = 13L,
+    progress        = FALSE,
+    ...                          # passed through to fit_convrt_realtime()
+) {
+  dates <- as.Date(dates); n <- length(obs_inc)
+  if (length(dates) != n) stop("obs_inc and dates must have the same length.")
+  if (n < 2L) stop("Need at least 2 observations.")
+  if (any(!is.finite(obs_inc)) || any(obs_inc < 0))
+    stop("obs_inc must be finite and non-negative (one count per day).")
+  if (any(diff(as.integer(dates)) != 1L))
+    warning("dates are not consecutive single days; conformal horizons assume ",
+            "daily spacing -- results may be miscalibrated.")
+
+  W_target <- n
+  # Earliest vintage that still has enough data to fit: keep a margin past the
+  # likelihood-start day so the smoothing spline is well-posed.
+  min_W <- if (!is.null(likelihood_start_date)) {
+    li <- match(as.Date(likelihood_start_date), dates)
+    if (is.na(li)) stop("likelihood_start_date not found in dates.")
+    li + 4L * as.integer(knot_step)
+  } else {
+    4L * as.integer(knot_step) + 1L
+  }
+  W_start <- max(min_W, W_target - as.integer(n_calib) + 1L)
+  vintages <- W_start:W_target
+  if (length(vintages) < buffer_days + max_lag)
+    warning(sprintf(
+      "Only %d calibration vintages available (need ~%d for buffer_days=%d, max_lag=%d); ",
+      length(vintages), buffer_days + max_lag, buffer_days, max_lag),
+      "conformal q may be NA at some horizons (those rows fall back to the Wald CI).")
+
+  if (progress)
+    cat(sprintf("Refitting at %d daily vintages (day %d..%d)...\n",
+                length(vintages), W_start, W_target))
+
+  target_fit <- NULL
+  rows <- lapply(vintages, function(W) {
+    res <- tryCatch(
+      fit_convrt_realtime(
+        obs_inc = obs_inc[1:W], dates = dates[1:W], g = g,
+        mean_EY = mean_EY, sd_EY = sd_EY, severity = severity,
+        first_rt_date = first_rt_date,
+        likelihood_start_date = likelihood_start_date,
+        knot_step = knot_step, ...),
+      error = function(e) { warning(sprintf("vintage %d failed: %s", W, conditionMessage(e))); NULL })
+    if (progress && W %% 10L == 0L) cat(sprintf("  ...vintage %d/%d\n", W, W_target))
+    if (is.null(res)) return(NULL)
+    if (W == W_target) target_fit <<- res
+    df <- res$rt_df; df$vintage <- dates[W]; df
+  })
+  daily_vintages <- dplyr::bind_rows(Filter(Negate(is.null), rows))
+  if (is.null(target_fit))
+    stop("The target (latest) vintage fit failed; cannot produce a nowcast.")
+
+  conf <- gi_apply_conformal_to_rt_df(
+    rt_df          = target_fit$rt_df,
+    daily_vintages = daily_vintages,
+    target_W       = dates[W_target],
+    ci_level       = ci_level,
+    buffer_days    = buffer_days,
+    max_lag        = max_lag)
+
+  list(rt_df = conf, daily_vintages = daily_vintages,
+       target_W = dates[W_target], fit = target_fit,
+       n_vintages = length(unique(daily_vintages$vintage)))
+}

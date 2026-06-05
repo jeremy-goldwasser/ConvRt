@@ -1,6 +1,7 @@
 # Export the public ConvRt API (all fit_convrt*, gi_*, and build_gi* functions).
 # Internal helpers are named with a leading dot (.gi_*) and stay unexported.
 exportPattern("^(fit_convrt|gi_|build_gi)")
+export(plot_convrt)
 
 importFrom(stats, median)
 importFrom(utils, tail)

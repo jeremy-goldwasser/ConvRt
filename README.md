@@ -55,9 +55,22 @@ rt <- fit_convrt_realtime(
   mean_EY = 5.7, sd_EY = 2.3, severity = 0.015,
   first_rt_date         = as.Date("2022-07-01"),
   likelihood_start_date = as.Date("2022-07-22"))
+
+# 4. Quick plot of any fit (needs ggplot2)
+plot_convrt(retro)
+
+# 5. Real-time nowcast with split-conformal edge CIs (refits at many past
+#    vintages internally, so it is slower):
+nc <- fit_convrt_realtime_conformal(
+  obs_inc = y_vintage, dates = dates_vintage, g = g,
+  mean_EY = 5.7, sd_EY = 2.3, severity = 0.015,
+  first_rt_date         = as.Date("2022-07-01"),
+  likelihood_start_date = as.Date("2022-07-22"),
+  n_calib = 45)
+nc$rt_df    # trailing-edge Rt_lo/Rt_hi are conformal; ci_source marks each row
 ```
 
-Pass `verbose = TRUE` to either wrapper to print CV/tuning progress (silent by
+Pass `verbose = TRUE` to either fit wrapper to print CV/tuning progress (silent by
 default).
 
 ---
@@ -132,7 +145,7 @@ still arriving) to stabilize the nowcast.
 | Pointwise (Laplace/Wald) | `fit_convrt_*$rt_df` (`Rt_lo`/`Rt_hi`) | Sandwich covariance `M_pen^{-1} Z'WZ M_pen^{-1}`. `level = 0.95`. |
 | Quasi-Poisson overdispersion | `overdispersion = TRUE` (default) | Inflates SEs by `sqrt(phi)`, with `phi` the Pearson statistic over effective df. Point estimates are unchanged. Set `FALSE` for pure Poisson SEs. |
 | Simultaneous band | `gi_extract_rt_simband()` | Sup-norm band drawn from the Laplace covariance (`n_sim = 5000`). |
-| Real-time **split-conformal** | `gi_apply_conformal_to_rt_df()` | Calibrates the trailing-edge band from how past vintages' real-time estimates differed from the later settled values. `ci_level = 0.90`, `buffer_days = 14` (a date is "settled" once this far behind an edge), `max_lag = 13` (corrects the trailing 14 days). Requires refitting at many past vintages — see the second demo. |
+| Real-time **split-conformal** | `fit_convrt_realtime_conformal()` (one call) or `gi_apply_conformal_to_rt_df()` (manual) | Calibrates the trailing-edge band from how past vintages' real-time estimates differed from the later settled values. `ci_level = 0.90`, `buffer_days = 14` (a date is "settled" once this far behind an edge), `max_lag = 13` (corrects the trailing 14 days), `n_calib = 45` prior vintages. Refits the model many times — slow. |
 
 ### 6. Day-of-week effects
 
@@ -193,9 +206,14 @@ Rscript examples/demo_realtime_ci.R
 - `fit_convrt_tf_retrospective(...)` — trend-filter variant (needs **CVXR**).
 
 **Confidence intervals**
+- `fit_convrt_realtime_conformal(...)` — one-call real-time nowcast with
+  split-conformal edge CIs (refits at `n_calib` past vintages internally).
 - `gi_extract_rt_simband(...)` — simultaneous (sup-norm) band.
 - `gi_apply_conformal_to_rt_df(...)`, `gi_compute_conformal_q(...)`,
-  `gi_load_daily_vintage_cache(...)` — real-time split-conformal CIs.
+  `gi_load_daily_vintage_cache(...)` — lower-level conformal building blocks.
+
+**Plotting**
+- `plot_convrt(fit, truth = NULL)` — ggplot of the R<sub>t</sub> curve + band.
 
 **Building blocks** (call directly for custom pipelines): `gi_deconvolve_exposures`,
 `gi_renewal_force`, `build_gi_design`, `gi_solve`, `gi_select_lambda_cv`

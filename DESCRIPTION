@@ -1,0 +1,32 @@
+Package: ConvRt
+Type: Package
+Title: Generation-Interval Estimation of the Time-Varying Reproduction Number
+Version: 0.1.0
+Authors@R:
+    person("Jeremy", "Goldwasser", email = "jeremy_goldwasser@berkeley.edu",
+           role = c("aut", "cre"))
+Description: A regularized identity-link Poisson estimator of the time-varying
+    reproduction number R_t. ConvRt fits a smoothing-spline R_t through the
+    renewal equation and predicts the observed counts. The only epidemiological
+    inputs are a generation interval and a reporting delay, each a single PMF.
+    Provides retrospective and real-time (right-censored, tapered-tail with
+    split-conformal intervals) fits, plus weekly-aggregated and trend-filtered
+    variants.
+License: MIT + file LICENSE
+Encoding: UTF-8
+LazyData: true
+Depends:
+    R (>= 3.5.0),
+    dplyr,
+    tibble,
+    tidyr,
+    splines
+Imports:
+    stats,
+    utils
+Suggests:
+    mgcv,
+    CVXR,
+    ggplot2,
+    patchwork
+RoxygenNote: 7.3.1

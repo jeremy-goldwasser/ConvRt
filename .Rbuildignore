@@ -1,0 +1,7 @@
+^examples$
+^install_packages\.R$
+^.*\.Rproj$
+^\.Rproj\.user$
+^\.git$
+^\.DS_Store$
+^.*/\.DS_Store$
